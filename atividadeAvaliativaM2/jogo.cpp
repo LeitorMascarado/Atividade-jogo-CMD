@@ -8,6 +8,9 @@
 
 using namespace std;
 
+// const permite apenas ler um dado; & usa o dado original, sem criar uma cópia.
+// Funções bool indicam se uma ação deu certo; funções void apenas executam uma ação.
+
 // Guarda as informações do personagem controlado pelo jogador.
 struct jogador {
     int vida;
@@ -79,6 +82,7 @@ struct pontuacao {
 };
 
 // Função reservada para uma futura troca de mapa.
+// É bool porque, no futuro, poderá informar se a troca deu certo.
 bool trocarMapa() {
     return false;
 };
@@ -105,7 +109,26 @@ struct mapa {
 
 };
 
+// Guarda tudo que pode mudar durante uma jogada.
+struct estadoJogo {
+    mapa mapaAtual;
+    jogador jogadorAtual;
+    item_cura curaAtual;
+    item_ataque espadaAtual;
+    inimigo inimigoAtual;
+    caixa caixaAtual;
+    porta portaAtual;
+    pontuacao pontosAtuais;
+};
+
+// Guarda as cinco últimas jogadas para permitir voltar no tempo.
+struct historicoJogo {
+    estadoJogo jogadas[5];
+    int quantidade = 0;
+};
+
 // Lê um arquivo CSV e coloca seus números em uma matriz de mapa.
+// É bool para avisar se o arquivo foi lido corretamente ou se houve erro.
 bool Mapa_Memoria(const string& nomeArquivo, int matriz[20][20]){
     ifstream arquivo(nomeArquivo);
     if (!arquivo) {
@@ -131,6 +154,7 @@ bool Mapa_Memoria(const string& nomeArquivo, int matriz[20][20]){
 }
 
 // Salva o mapa atual em um arquivo CSV.
+// É bool para avisar se o arquivo foi salvo com sucesso.
 bool salvarMapaTemp(const string& nomeArquivo, const mapa& m) {
     ofstream arquivo(nomeArquivo);
     if (!arquivo) {
@@ -153,6 +177,7 @@ bool salvarMapaTemp(const string& nomeArquivo, const mapa& m) {
 }
 
 // Configura o terminal para ler uma tecla por vez, sem pressionar Enter.
+// É bool porque pode falhar ao tentar alterar as configurações do terminal.
 bool configurar_entrada_terminal(termios& configuracaoOriginal) {
     if (tcgetattr(STDIN_FILENO, &configuracaoOriginal) != 0) {
         return false;
@@ -166,11 +191,13 @@ bool configurar_entrada_terminal(termios& configuracaoOriginal) {
 }
 
 // Devolve ao terminal a configuração que ele tinha antes do jogo.
+// É void porque apenas executa essa ação e não precisa devolver resposta.
 void restaurar_entrada_terminal(const termios& configuracaoOriginal) {
     tcsetattr(STDIN_FILENO, TCSANOW, &configuracaoOriginal);
 }
 
 // Copia o mapa escolhido para a tela e registra qual mapa foi escolhido.
+// É void porque altera o mapa recebido por & e não precisa devolver valor.
 void mudarMapa(mapa& m, const listaMapas& mapas, int numeroMapa) {
 
     switch (numeroMapa)
@@ -217,12 +244,14 @@ void mudarMapa(mapa& m, const listaMapas& mapas, int numeroMapa) {
         m.numeroMapa = numeroMapa;
 }
 
-// Lê a tecla pressionada pelo jogador.
+// Lê a tecla pressionada pelo jogador e coloca o resultado em tecla.
+// É bool para avisar se foi possível ler uma tecla.
 bool ler_tecla(char& tecla) {
     return read(STDIN_FILENO, &tecla, 1) == 1;
 }
 
 // Verifica se uma posição está livre e não fica dentro de uma parede.
+// É bool porque a resposta só pode ser sim ou não.
 bool posicaoValida(int x, int y, const mapa& m, const jogador& j, const item_cura& cura, const caixa& caixa, const item_ataque& espada, const porta& porta, const inimigo& inim) {
     
     return m.mapaSelecionado[y][x] == 0 &&
@@ -236,6 +265,7 @@ bool posicaoValida(int x, int y, const mapa& m, const jogador& j, const item_cur
 }
 
 // Sorteia uma posição livre para colocar um objeto no mapa.
+// É void porque muda x e y recebidos por & diretamente.
 void sortearPosicao(int& x, int& y, const mapa& m, const jogador& j, const item_cura& cura, const caixa& caixa, const item_ataque& espada, const porta& porta, const inimigo& inim) {
     
     // Verifica se a posição sorteada é válida, caso contrário, sorteia novamente.
@@ -258,7 +288,45 @@ void sortearPosicao(int& x, int& y, const mapa& m, const jogador& j, const item_
     }
 }
 
+// Salva uma jogada e descarta a mais antiga quando já houver cinco.
+// É void porque altera o histórico recebido por &.
+void salvarJogada(historicoJogo& historico, const estadoJogo& estado) {
+    if (historico.quantidade == 5) {
+        for (int i = 0; i < 4; i++) {
+            historico.jogadas[i] = historico.jogadas[i + 1];
+        }
+        historico.quantidade--;
+    }
+
+    historico.jogadas[historico.quantidade] = estado;
+    historico.quantidade++;
+}
+
+// Restaura a última jogada salva. Retorna false se não houver histórico.
+// É bool para o jogo saber se realmente conseguiu voltar no tempo.
+bool voltarNoTempo(historicoJogo& historico, mapa& m, jogador& j,
+                   item_cura& cura, item_ataque& espada, inimigo& inim,
+                   caixa& caixa, porta& portaRobson, pontuacao& pontos) {
+    if (historico.quantidade == 0) {
+        return false;
+    }
+
+    historico.quantidade--;
+    estadoJogo estado = historico.jogadas[historico.quantidade];
+
+    m = estado.mapaAtual;
+    j = estado.jogadorAtual;
+    cura = estado.curaAtual;
+    espada = estado.espadaAtual;
+    inim = estado.inimigoAtual;
+    caixa = estado.caixaAtual;
+    portaRobson = estado.portaAtual;
+    pontos = estado.pontosAtuais;
+    return true;
+}
+
 // Move o inimigo em direção ao jogador e aplica dano quando ele chega perto.
+// É bool para informar se o inimigo conseguiu fazer uma ação.
 bool moverInimigo(inimigo& inim, jogador& j, const mapa& m, const porta& portaRobson, const caixa& caixa) {
     bool moverHorizontal = inim.proximaHorizontal;
 
@@ -307,6 +375,7 @@ if (m.mapaSelecionado[novoY][novoX] == 1 ||
 }
 
 // Reinicia os objetos da fase atual em posições livres do mapa.
+// É void porque altera os objetos recebidos por & e não precisa retornar valor.
 void reiniciarFase(jogador& j, const mapa& m, item_cura& itemCura,
                    caixa& caixa, porta& portaRobson, item_ataque& espada,
                    inimigo& inim) {
@@ -350,7 +419,8 @@ void reiniciarFase(jogador& j, const mapa& m, item_cura& itemCura,
 }
 
 // Move o jogador e trata colisões com objetos, itens e portas.
-bool mover(jogador& j, mapa& m, const listaMapas& mapas, item_cura& itemCura, caixa& caixa, porta& portaRobson, item_ataque& espada, inimigo& inim, pontuacao& pontos, char direcao) {
+// É bool para informar ao jogo se a jogada foi válida.
+bool mover(jogador& j, mapa& m, const listaMapas& mapas, item_cura& itemCura, caixa& caixa, porta& portaRobson, item_ataque& espada, inimigo& inim, pontuacao& pontos, historicoJogo& historico, char direcao) {
     int novoX = j.x;
     int novoY = j.y;
 
@@ -362,6 +432,10 @@ bool mover(jogador& j, mapa& m, const listaMapas& mapas, item_cura& itemCura, ca
         case 'd': ++novoX; break;
         case 'k': pontos.rotacao++; return true;
         case ' ': return true;
+        case 't':
+        case 'T':
+            return voltarNoTempo(historico, m, j, itemCura, espada, inim,
+                                 caixa, portaRobson, pontos);
         case 'r':
         case 'R':
             reiniciarFase(j, m, itemCura, caixa, portaRobson, espada, inim);
@@ -486,11 +560,13 @@ bool mover(jogador& j, mapa& m, const listaMapas& mapas, item_cura& itemCura, ca
 }
 
 // Imprime um símbolo ocupando sempre o mesmo espaço na tela.
+// É void porque sua única tarefa é escrever o símbolo no terminal.
 void imprimirCelula(const string& simbolo){
     cout << left << setw(2) << simbolo;
 }
 
 // Desenha o mapa e todos os objetos na tela.
+// É void porque apenas mostra dados; os parâmetros const não são alterados.
 void printar_mapa(const mapa& m, const jogador& j, const item_cura& itemCura, const caixa& caixa, const item_ataque& espada, const porta& portaRobson, const inimigo& inim, bool atacando = false) {
     
     for (int linha = 0; linha < 20; linha++) {
@@ -526,6 +602,7 @@ void printar_mapa(const mapa& m, const jogador& j, const item_cura& itemCura, co
 }
 
 // Mostra o ataque da espada e afasta o inimigo que estiver no alcance.
+// É void porque altera o inimigo por & e não precisa devolver resultado.
 void atacar(const mapa& m, const jogador& j, const item_cura& itemCura, const caixa& caixa, const item_ataque& espada, const porta& portaRobson, inimigo& inim) {
     if (!espada.ativo) return;
 
@@ -548,6 +625,7 @@ void atacar(const mapa& m, const jogador& j, const item_cura& itemCura, const ca
 }
 
 // Salva os dados atuais da partida no arquivo saveJogo.txt.
+// É bool para avisar se o arquivo foi criado corretamente.
 bool salvarJogo(const mapa& m, const jogador& j, const item_cura& itemCura, const item_ataque& espada, const inimigo& inim, const caixa& caixa, const porta& portaRobson) {
     ofstream arquivo("saveJogo.txt");
     if (!arquivo) {
@@ -580,6 +658,7 @@ bool salvarJogo(const mapa& m, const jogador& j, const item_cura& itemCura, cons
 }
 
 // Lê saveJogo.txt e devolve o jogo ao estado que foi salvo.
+// É bool para avisar se o save foi encontrado e lido sem erro.
 bool carregarJogo(mapa& m, jogador& j, item_cura& itemCura, item_ataque& espada, inimigo& inim, caixa& caixaAtual, porta& portaRobson) {
     
     ifstream arquivo("saveJogo.txt");
@@ -648,6 +727,7 @@ bool carregarJogo(mapa& m, jogador& j, item_cura& itemCura, item_ataque& espada,
 }
 
 // Inicia o jogo e mantém o laço principal recebendo os comandos do jogador.
+// É int porque o sistema recebe um número no fim: 0 significa que tudo terminou bem.
 int main() {
     
     termios configuracaoOriginal{};
@@ -679,6 +759,7 @@ int main() {
     caixa caixa {3, 3, 20, true};
     porta portaRobson {15, 15, false, 17, 17, false};
     pontuacao pontos {0, 0, 0, 0};
+    historicoJogo historico;
 
     int novaPosicaoX;
     int novaPosicaoY;
@@ -710,7 +791,7 @@ int main() {
     system("clear");
     printar_mapa(mapa, jogador, pocao, caixa, espada, portaRobson, inimigo);
     cout << "Vida: " << jogador.vida << endl;
-    cout << "Mover: W/A/S/D | Atacar: Espaco | Reiniciar: R | Salvar: P | Carregar: L | Sair: Q\n";
+    cout << "Mover: W/A/S/D | Atacar: Espaco | Voltar: T | Reiniciar: R | Salvar: P | Carregar: L | Sair: Q\n";
     cout.flush();
     
     while (jogador.vida > 0) {
@@ -731,7 +812,7 @@ int main() {
             printar_mapa(mapa, jogador, pocao, caixa, espada, portaRobson, inimigo);
             cout << (salvo && mapaSalvo ? "Jogo salvo em saveJogo.txt e mapaSalvo.csv.\n" : "Nao foi possivel salvar o jogo ou o mapa.\n");
             cout << "Vida: " << jogador.vida << endl;
-            cout << "Mover: W/A/S/D | Atacar: Espaco | Reiniciar: R | Salvar: P | Carregar: L | Sair: Q\n";
+            cout << "Mover: W/A/S/D | Atacar: Espaco | Voltar: T | Reiniciar: R | Salvar: P | Carregar: L | Sair: Q\n";
             cout.flush();
             continue;
         }
@@ -742,12 +823,21 @@ int main() {
             printar_mapa(mapa, jogador, pocao, caixa, espada, portaRobson, inimigo);
             cout << (carregado ? "Jogo carregado.\n" : "Nao foi possivel carregar saveJogo.txt.\n");
             cout << "Vida: " << jogador.vida << endl;
-            cout << "Mover: W/A/S/D | Atacar: Espaco | Reiniciar: R | Salvar: P | Carregar: L | Sair: Q\n";
+            cout << "Mover: W/A/S/D | Atacar: Espaco | Voltar: T | Reiniciar: R | Salvar: P | Carregar: L | Sair: Q\n";
             cout.flush();
             continue;
         }
 
-        bool movimentoValido = mover(jogador, mapa, mapas, pocao, caixa, portaRobson, espada, inimigo, pontos, direcao);
+        estadoJogo estadoAntes = {mapa, jogador, pocao, espada, inimigo,
+                                  caixa, portaRobson, pontos};
+        bool movimentoValido = mover(jogador, mapa, mapas, pocao, caixa,
+                                     portaRobson, espada, inimigo, pontos,
+                                     historico, direcao);
+        bool voltouNoTempo = (direcao == 't' || direcao == 'T') && movimentoValido;
+
+        if (movimentoValido && !voltouNoTempo) {
+            salvarJogada(historico, estadoAntes);
+        }
 
         if (direcao == ' ') {
             atacar(mapa, jogador, pocao, caixa, espada, portaRobson, inimigo);
@@ -757,7 +847,7 @@ int main() {
             }
         }
 
-        if (movimentoValido) {
+        if (movimentoValido && !voltouNoTempo) {
             if (moverInimigo(inimigo, jogador, mapa, portaRobson, caixa)) {
                 if (jogador.x == inimigo.x && jogador.y == inimigo.y) {
                     jogador.vida -= inimigo.dano;
@@ -768,11 +858,12 @@ int main() {
         system("clear");
         printar_mapa(mapa, jogador, pocao, caixa, espada, portaRobson, inimigo);
         if (!movimentoValido) {
-            cout << "Movimento invalido.\n";
+            cout << ((direcao == 't' || direcao == 'T') ?
+                         "Nao ha jogada para voltar.\n" : "Movimento invalido.\n");
         }
         cout << "Vida: " << jogador.vida << " | Pontos: " << pontos.portasAbertas << " Rotacao: " << pontos.rotacao << endl;
         cout << "Espada ativa: " << (espada.ativo ? "Ativo" : "Inativo") << endl;
-        cout << "Mover: W/A/S/D | Atacar: Espaco | Reiniciar: R | Salvar: P | Carregar: L | Sair: Q\n";
+        cout << "Mover: W/A/S/D | Atacar: Espaco | Voltar: T | Reiniciar: R | Salvar: P | Carregar: L | Sair: Q\n";
         cout.flush();
     }
 
